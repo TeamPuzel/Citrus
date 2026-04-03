@@ -1,0 +1,8 @@
+
+module Ctru [system] {
+    header "ctru.h"
+}
+
+module Libc [system] {
+    header "libc.h"
+}
