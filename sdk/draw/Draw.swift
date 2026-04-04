@@ -396,7 +396,9 @@ extension MutablePlane where Self: ~Copyable, Self: ~Escapable {
     }
 
     @_transparent
-    public mutating func draw(_ plane: borrowing some SizedPlane & ~Copyable & ~Escapable, blender: ColorBlender = .binary) {
+    public mutating func draw(
+        _ plane: borrowing some SizedPlane & ~Copyable & ~Escapable, blender: ColorBlender = .binary
+    ) {
         self.draw(plane, x: 0, y: 0, blender: blender)
     }
 

@@ -40,7 +40,8 @@ LIBC = \
 
 CFLAGS = \
 	-target arm-none-eabi -std=c23 -mcpu=mpcore -march=armv6k -ffreestanding -fno-builtin -O3 -mfloat-abi=hard \
-	-pedantic -Wno-keyword-macro
+	-fshort-enums -pedantic -Wno-keyword-macro \
+	-isystem $(DEVKITPRO)/libctru/include -isystem $(DEVKITPRO)/devkitARM/arm-none-eabi/include
 CXXFLAGS = \
 	-target arm-none-eabi -std=c++23 -mcpu=mpcore -march=armv6k -ffreestanding -fno-builtin -O3 -mfloat-abi=hard \
 	-pedantic -Wno-keyword-macro -fno-exceptions -fno-rtti
@@ -68,7 +69,6 @@ SWIFT_FLAGS = \
 	-enable-experimental-feature MoveOnlyTuples \
 	-enable-experimental-feature MoveOnlyClasses \
 	-enable-experimental-feature StructLetDestructuring \
-	-enable-experimental-feature CoroutineAccessors \
 	-enable-experimental-feature CompileTimeValues \
 	-enable-experimental-feature LiteralExpressions \
 	-enable-experimental-feature BorrowAndMutateAccessors \
@@ -81,6 +81,8 @@ SWIFT_FLAGS = \
 	-Xcc -I$(DEVKITPRO)/libctru/include \
 	-Xcc -I$(DEVKITPRO)/devkitARM/arm-none-eabi/include \
 	-Xcc -mfloat-abi=hard -Xcc -mfpu=vfp -Xcc -mcpu=mpcore -Xcc -march=armv6k -Xcc -fshort-enums
+
+# -enable-experimental-feature CoroutineAccessors // broken with classes at the moment, will not compile
 
 ELF = build/$(NAME).elf
 CXI = build/$(NAME).cxi
@@ -120,11 +122,13 @@ $(SWIFT_STDLIB):
         -Xcc -fno-rtti \
         -Xcc -nostdinc++
 
-configure:
-	@mkdir -p build
+$(SUBMODULES):
 	@git clone git@github.com:TeamPuzel/swift.git modules/swift
 
-$(CITRUS_MOD): $(CITRUS_SRC) $(DRAW_MOD) $(SWIFT_STDLIB)
+configure: $(SUBMODULES)
+	@mkdir -p build
+
+$(CITRUS_MOD): $(CITRUS_SRC) $(CITRUS_CSRC) $(DRAW_MOD) $(SWIFT_STDLIB)
 	@$(SWIFTC) $(SWIFT_FLAGS) $(CITRUS_SRC) -I build -module-name Citrus -emit-module -emit-module-path $(CITRUS_MOD)
 
 $(DRAW_MOD): $(DRAW_SRC) $(SWIFT_STDLIB)

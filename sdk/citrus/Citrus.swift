@@ -1,18 +1,28 @@
 
+import Builtin
 import Libc
 import Ctru
 import Draw
 
 @c @used @unsafe
-func posix_memalign(_ memptr: UnsafeMutablePointer<UnsafeMutableRawPointer?>, _ alignment: UInt, _ size: UInt) -> CInt {
-    let ptr = unsafe aligned_alloc(Int(alignment), Int(size))
+func posix_memalign(_ memptr: UnsafeMutablePointer<UnsafeMutableRawPointer?>, _ alignment: Int, _ size: Int) -> Int {
+    let ptr = unsafe aligned_alloc(alignment, size)
 
     if unsafe ptr != nil {
         unsafe memptr.pointee = ptr
         return 0
     } else {
-        return ENOMEM
+        return Int(ENOMEM)
     }
+}
+
+@c @used @unsafe
+func _getentropy_r(_ r: UnsafeMutablePointer<_reent>!, _ ptr: UnsafeMutableRawPointer!, _ size: Int) -> Int {
+    guard unsafe PS_GenerateRandomBytes(ptr, size) == 0 else {
+        if let r = unsafe r { unsafe r.pointee._errno = EIO }
+        return -1
+    }
+    return 0
 }
 
 public func log(_ string: borrowing String) {
@@ -136,6 +146,153 @@ public struct Thread: ~Copyable {
     }
 }
 
+public struct Mutex<T>: ~Copyable, @unchecked Sendable where T: ~Copyable {
+    private let handle: Handle
+    private var value: Cell<T>
+
+    public init(_ value: consuming T) {
+        self.value = Cell(value)
+        var handle: Handle = 0
+        guard unsafe svcCreateMutex(&handle, false) == 0 else { panic(because: "internal mutex failure") }
+        self.handle = handle
+    }
+
+    public func withLock<E, R>(_ body: (inout T) throws(E) -> R) throws(E) -> R {
+        guard svcWaitSynchronization(handle, -1) == 0 else { panic(because: "internal mutex failure") }
+        defer {
+            guard svcReleaseMutex(handle) == 0 else { panic(because: "internal mutex failure") }
+        }
+
+        return try value.with(body)
+    }
+
+    deinit {
+        if svcCloseHandle(handle) != 0 { log("failed to close a mutex") }
+    }
+}
+
+@_rawLayout(like: T, movesAsLike)
+private struct Cell<T>: ~Copyable where T: ~Copyable {
+    @_transparent
+    public var address: UnsafeMutablePointer<T> { unsafe .init(Builtin.addressOfRawLayout(self)) }
+
+    @_transparent
+    public init(_ value: consuming T) {
+        unsafe address.initialize(to: value)
+    }
+
+    @_transparent
+    deinit {
+        unsafe address.deinitialize(count: 1)
+    }
+
+    @_transparent
+    public func with<E, R>(_ body: (_ value: inout T) throws(E) -> R) throws(E) -> R {
+        unsafe try body(&address.pointee)
+    }
+
+    @_transparent
+    public consuming func move() -> T {
+        unsafe address.move()
+    }
+
+    @_transparent
+    public consuming func move() -> T where T: Copyable {
+        unsafe address.pointee
+    }
+}
+
+extension Cell: @unchecked Sendable where T: Sendable {}
+
+/// A base class for objects capable of serving as a parent in an object graph.
+///
+/// Annotate parent references with `@Parent` to weakly reference the parent object and avoid
+/// a memory leak. It behaves much like `unowned` but delegates the functionality to the object itself
+/// rather than the runtime, which is not available in Embedded Swift.
+open class ParentableObject {
+    private var childProperties: [any ChildProperty] = []
+
+    public init() {}
+
+    deinit {
+        for property in childProperties { property.sever() }
+    }
+
+    @unsafe
+    public final func _registerChildProperty(_ property: any ChildProperty) {
+        childProperties.append(property)
+    }
+
+    @unsafe
+    public final func _severChildProperty(_ property: any ChildProperty) {
+        childProperties.removeAll { $0 === property }
+    }
+}
+
+public protocol ChildProperty: AnyObject {
+    func sever()
+}
+
+/// Manages an unowned reference to a parent in an object graph.
+@propertyWrapper @safe
+public final class Parent<T>: ChildProperty where T: ParentableObject {
+    private var parent: Unmanaged<T>?
+
+    public func sever() {
+        if unsafe parent != nil {
+            unsafe wrappedValue._severChildProperty(self)
+            unsafe self.parent = nil
+        }
+    }
+
+    public init(wrappedValue: T) {
+        unsafe parent = Unmanaged.passUnretained(wrappedValue)
+        unsafe wrappedValue._registerChildProperty(self)
+    }
+
+    public var wrappedValue: T {
+        get { unsafe parent!.takeUnretainedValue() }
+        set {
+            if unsafe parent != nil { sever() }
+            unsafe parent = Unmanaged.passUnretained(newValue)
+            unsafe wrappedValue._registerChildProperty(self)
+        }
+    }
+}
+
+public struct Xoshiro256StarStar: RandomNumberGenerator {
+    private var state: InlineArray<4, UInt64>
+
+    private static func rotl(_ x: UInt64, _ k: Int32) -> UInt64 { return (x << k) | (x >> (64 - k)) }
+
+    public init(state: InlineArray<4, UInt64>) {
+        precondition(state[0] | state[1] | state[2] | state[3] != 0)
+        self.state = state
+    }
+
+    public init(from seed: UInt64) {
+        precondition(seed != 0)
+        self.init(state: [seed, seed << 1, seed << 2, seed << 3])
+    }
+
+    public mutating func next() -> UInt64 {
+        let result = Self.rotl(state[1] &* 5, 7) &* 9
+
+        let t = state[1] << 17
+
+        state[2] ^= state[0]
+        state[3] ^= state[1]
+        state[1] ^= state[2]
+        state[0] ^= state[3]
+
+        state[2] ^= t
+
+        state[3] = Self.rotl(state[3], 45)
+
+        return result
+    }
+}
+
 public struct Input: ~Copyable {
     public private(set) var keysPressed: Keys = []
     public private(set) var keysUnpressed: Keys = []
@@ -217,7 +374,7 @@ public struct Renderer: ~Copyable {
     }
 
     @safe
-    public struct Screen: ~Copyable, SizedMutablePlane {
+    public struct Screen: SizedMutablePlane, ~Copyable {
         public let index: Index
 
         private var buffer: UnsafeMutablePointer<Pixel>!
@@ -304,7 +461,7 @@ extension Application {
         while aptMainLoop() {
             input.sync()
 
-            if input.keysHeld.rawValue != 0 { break }
+            if !input.keysHeld.isEmpty { break }
 
             gfxFlushBuffers()
       		gfxSwapBuffers()
@@ -315,6 +472,8 @@ extension Application {
     }
 
     public static func main() {
+        osSetSpeedupEnable(true)
+
         gfxInit(GSP_BGR8_OES, GSP_BGR8_OES, false)
         defer { gfxExit() }
 
@@ -344,6 +503,33 @@ extension Application {
     }
 
     public static func resource(path: borrowing String) -> [UInt8] { ResourceLoader.load(path: path) }
+
+    public static var memoryUsage: (used: Int, free: Int, size: Int) {
+        (
+            used: Int(osGetMemRegionUsed(MEMREGION_ALL)) / 1024,
+            free: Int(osGetMemRegionFree(MEMREGION_ALL)) / 1024,
+            size: Int(osGetMemRegionSize(MEMREGION_ALL)) / 1024
+        )
+    }
+}
+
+public struct PerformanceCounter {
+    private let startTick = svcGetSystemTick()
+    public init() {}
+    public func elapsed() -> UInt64 { svcGetSystemTick() - startTick }
+
+    public static let cyclesPerFrame: UInt64 = 268_123_480 / 60
+
+    public static func percentage(cycles: UInt64) -> Float { ratio(cycles: cycles) * 100 }
+    public static func ratio(cycles: UInt64) -> Float { Float(cycles) / Float(cyclesPerFrame) }
+
+    public func percentageString() -> String { String(Int(percentage())) + "%" }
+    public func percentage() -> Float { ratio() * 100 }
+    public func ratio() -> Float { Float(elapsed()) / Float(Self.cyclesPerFrame) }
+}
+
+extension PerformanceCounter: CustomStringConvertible {
+    public var description: String { percentageString() }
 }
 
 private enum ResourceLoader {
@@ -362,6 +548,19 @@ private enum ResourceLoader {
         return unsafe .init(unsafeUninitializedCapacity: size) { buffer, initializedCount in
             initializedCount = unsafe fread(buffer.baseAddress, 1, size, file)
         }
+    }
+}
+
+/// A native, 3DS platform provided font sheet.
+@safe
+public struct SystemFontSource: SizedPlane {
+    private let font: OpaquePointer
+
+    public var width: Int { 512 }
+    public var height: Int { 512 }
+
+    public subscript(x: Int, y: Int) -> Color {
+        fatalError()
     }
 }
 
