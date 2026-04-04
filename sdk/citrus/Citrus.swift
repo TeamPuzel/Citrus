@@ -131,6 +131,11 @@ public struct Thread: ~Copyable {
         svcSleepThread(nanoseconds)
     }
 
+    @_transparent
+    public static func sleep(seconds: Int64) {
+        sleep(nanoseconds: seconds * 1_000_000_000)
+    }
+
     public enum Priority : Int32 {
         case high   = 0x18
         case medium = 0x25

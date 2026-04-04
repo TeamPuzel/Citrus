@@ -156,7 +156,7 @@ $(CXI): $(ELF) $(ROMFS) $(BANNER_BIN) $(ICON_BIN)
 	-icon $(ICON_BIN) -banner $(BANNER_BIN) # -logo $(LOGO)
 
 $(3DSX): $(ELF) $(ROMFS)
-	@3dsxtool $(ELF) $(3DSX) --smdh=$(ICON_BIN) --romfs=$(ROMFS)
+	@3dsxtool $(ELF) $(3DSX) --smdh=$(ICON_BIN) --romfs=romfs
 
 $(BANNER_BIN) $(ICON_BIN):
 	@bannertool makebanner -i $(BANNER_IMAGE) -a $(BANNER_AUDIO) -o $(BANNER_BIN)
@@ -173,7 +173,7 @@ run: $(CXI)
 	@$(AZAHAR) $(realpath $(CXI))
 
 link: $(3DSX)
-	@3dslink -a $(IP) $(3DSX)
+	@3dslink -a $(IP) $(3DSX) -0 sdmc:/3ds/$(NAME).3dsx
 
 serve:
 	@caddy file-server --root build --listen :8001

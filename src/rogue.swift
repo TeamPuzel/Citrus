@@ -26,6 +26,7 @@ final class World: ParentableObject {
 /// A proceduraly generated dungeon floor.
 final class Floor: ParentableObject {
     @Parent var world: World
+
     var entities: Set<Entity> = []
     var tiles: [Tile] = []
 
