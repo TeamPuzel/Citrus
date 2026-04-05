@@ -45,6 +45,34 @@ public func panic(
     svcExitProcess()
 }
 
+// public final class CitrusEventLoopExecutor: SerialExecutor {
+//     private let queue: Mutex<Array<UnownedJob>> = Mutex([])
+
+//     private init() {}
+
+//     public func enqueue(_ job: consuming ExecutorJob) {
+//         let unowned = UnownedJob(job)
+//         queue.withLock { queue in queue.append(unowned) }
+//     }
+
+//     public func asUnownedSerialExecutor() -> UnownedSerialExecutor {
+//         unsafe UnownedSerialExecutor(complexEquality: self)
+//     }
+
+//     internal func drain() {
+//         // Pull all jobs out at once to minimize lock contention
+//         let jobs = queue.withLock { queue in
+//             var result = Array<UnownedJob>()
+//             swap(&result, &queue)
+//             return result
+//         }
+
+//         for job in jobs { unsafe job.runSynchronously(on: self.asUnownedSerialExecutor()) }
+//     }
+
+//     internal static let shared = CitrusEventLoopExecutor()
+// }
+
 public struct Thread: ~Copyable {
     private var handle: Handle
 
@@ -496,6 +524,8 @@ extension Application {
             input.sync()
             unsafe renderer.sync()
 
+            // CitrusEventLoopExecutor.shared.drain()
+
             if input.keys(held: [.start, .select]) { break }
 
             app.update(with: input)
@@ -503,7 +533,7 @@ extension Application {
 
             gfxFlushBuffers()
       		gfxSwapBuffers()
-      		gspWaitForEvent(GSPGPU_EVENT_VBlank0, true)
+            gspWaitForEvent(GSPGPU_EVENT_VBlank0, true)
         }
     }
 
