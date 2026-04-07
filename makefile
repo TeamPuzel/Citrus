@@ -230,7 +230,7 @@ endif
 SWIFT_FLAGS = $(SWIFT_COREFLAGS) \
 	-Xfrontend -import-module -Xfrontend _Unicode \
 	-Xfrontend -import-module -Xfrontend _Volatile
-# -Xfrontend -import-module -Xfrontend _Concurrency
+#	-Xfrontend -import-module -Xfrontend _Concurrency
 
 # Flags for the Swift Standard Library.
 SWIFT_STDFLAGS = $(SWIFT_COREFLAGS) -swift-version 5 -parse-stdlib
@@ -254,8 +254,8 @@ all: $(CIA)
 MODULES =
 
 define MODULE_DEF # $(1): Module Name, $(2): Module Directory, $(3): Dependencies, $(4): Flags
-$(1)_SRC     = $$(foreach dir,$(2),$$(wildcard $$(dir)/*.swift))
-$(1)_GYB     = $$(foreach dir,$(2),$$(wildcard $$(dir)/*.swift.gyb))
+$(1)_SRC     = $$(wildcard $(2)/*.swift)
+$(1)_GYB     = $$(wildcard $(2)/*.swift.gyb)
 $(1)_GYB_SRC = $$(patsubst %.swift.gyb, build/gyb/%.swift, $$($(1)_GYB))
 $(1)_ALL_SRC = $$($(1)_SRC) $$($(1)_GYB_SRC)
 
@@ -265,6 +265,7 @@ $(1)_CMD     = $$(SWIFTC) $(4) $$($(1)_ALL_SRC) -I build -module-name $(1) -emit
 $$($(1)_MOD): $$($(1)_ALL_SRC) $(3)
 	@echo "Compiling $(1)..."
 	@$$($(1)_CMD)
+	@touch $$@
 
 MODULES += $(1)
 endef
@@ -311,10 +312,10 @@ uni-tables: $(UNICODE_TABLES)
 # parts of the implementation use C++. For the sake of my sanity I have ported them to Swift and simplified the
 # build process to avoid any overly complex tooling.
 $(eval $(call MODULE_DEF,Swift,sdk/swift,,$(SWIFT_STDFLAGS)))
-$(eval $(call MODULE_DEF,_Unicode,sdk/unicode build/unicode,$(Swift_MOD),$(SWIFT_STDFLAGS)))
+$(eval $(call MODULE_DEF,_Unicode,sdk/unicode,$(Swift_MOD),$(SWIFT_STDFLAGS) build/unicode/tables.swift))
 $(eval $(call MODULE_DEF,_Volatile,sdk/volatile,$(Swift_MOD),$(SWIFT_STDFLAGS)))
 $(eval $(call MODULE_DEF,Synchronization,sdk/synchronization,$(Swift_MOD),$(SWIFT_COREFLAGS)))
-#$(eval $(call MODULE_DEF,_Concurrency,sdk/concurrency,$(Swift_MOD),$(SWIFT_STDFLAGS) -DSWIFT_CONCURRENCY_EMBEDDED))
+# $(eval $(call MODULE_DEF,_Concurrency,sdk/concurrency,$(Swift_MOD),$(SWIFT_STDFLAGS) -DSWIFT_CONCURRENCY_EMBEDDED))
 
 SWIFT_STDLIB = \
 	$(Swift_MOD) \
@@ -331,7 +332,9 @@ $(eval $(call MODULE_DEF,Citrus,sdk/citrus,$(SWIFT_STDLIB) $(Draw_MOD),$(SWIFT_F
 APP_SRC = $(wildcard src/*.swift)
 APP_OBJ = build/$(NAME).o
 $(APP_OBJ): $(APP_SRC) $(Citrus_MOD) $(Draw_MOD) $(SWIFT_STDLIB)
+	@echo "Compiling $(NAME)..."
 	@$(SWIFTC) $(SWIFT_FLAGS) $(APP_SRC) -I build -c -o $(APP_OBJ)
+	@touch $@
 
 # --- App Products -----------------------------------------------------------------------------------------------------
 # Application products such as binaries, resources and differend kinds of distributable bundles.

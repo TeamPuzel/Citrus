@@ -6,7 +6,9 @@ import Glibc
 #endif
 
 func readFile(_ path: String) -> String {
-    guard let file = fopen(path, "rb") else { fatalError(.init(cString: strerror(errno))) }
+    guard let file = fopen(path, "rb") else {
+        fatalError(.init(cString: strerror(errno)) + " where path = \(path)")
+    }
     defer { fclose(file) }
 
     fseek(file, 0, SEEK_END)
